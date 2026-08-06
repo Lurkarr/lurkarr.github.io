@@ -1,0 +1,46 @@
+name: Deploy
+
+on:
+  push:
+    branches: 
+      - "main"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Generate releases.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api '/repos/prowlarr/prowlarr/releases?per_page=100' --jq 'map(select(.draft == false) | { releaseUrl: .html_url, version: .tag_name | gsub("^v"; ""), description: .body, branch: (if .prerelease then "develop" else "main" end), releaseDate: .published_at, assets: (.assets // [] | map(select(.digest != null) |{ name, size, digest, url: .browser_download_url, arch: (.name | capture(".*\\b(?<arch>x86|x64|arm|arm64)\\b.*") | .arch), os: (.name | capture(".*\\b(?<os>win(?:dows)?|linux(?:-musl)?|osx|freebsd)(?:-core)?-(x86|x64|arm|arm64)\\b.*") | .os | if . == "win" then "windows" elif . == "linux-musl" then "linuxMusl" else . end), installer: (.name | test("\\b(installer\\.exe|osx-[^-]+-app)\\b")) })) }) | map(select(.assets | length > 0))' > www/releases.json
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: './www'
+      
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
